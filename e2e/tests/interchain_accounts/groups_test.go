@@ -66,6 +66,11 @@ type InterchainAccountsGroupsTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
+func (s *InterchainAccountsGroupsTestSuite) SetupSuite() {
+	chainA, chainB := s.GetChains()
+	s.SetChainsIntoSuite(chainA, chainB)
+}
+
 func (s *InterchainAccountsGroupsTestSuite) QueryGroupPolicyAddress(ctx context.Context, chain ibc.Chain) string {
 	queryClient := s.GetChainGRCPClients(chain).GroupsQueryClient
 	res, err := queryClient.GroupPoliciesByGroup(ctx, &grouptypes.QueryGroupPoliciesByGroupRequest{
@@ -78,18 +83,17 @@ func (s *InterchainAccountsGroupsTestSuite) QueryGroupPolicyAddress(ctx context.
 
 func (s *InterchainAccountsGroupsTestSuite) TestInterchainAccountsGroupsIntegration() {
 	t := s.T()
+	t.Parallel()
 	ctx := context.TODO()
+
+	chainA, chainB := s.GetChains()
+	relayer, _ := s.SetupRelayer(ctx, nil, chainA, chainB)
 
 	var (
 		groupPolicyAddr   string
 		interchainAccAddr string
 		err               error
 	)
-
-	// setup relayers and connection-0 between two chains
-	// channel-0 is a transfer channel but it will not be used in this test case
-	relayer, _ := s.SetupChainsRelayerAndChannel(ctx, nil)
-	chainA, chainB := s.GetChains()
 
 	chainAWallet := s.CreateUserOnChainA(ctx, testvalues.StartingTokenAmount)
 	chainAAddress := chainAWallet.FormattedAddress()

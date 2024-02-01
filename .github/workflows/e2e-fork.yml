@@ -27,6 +27,7 @@ jobs:
           echo "matrix=$output" >> $GITHUB_OUTPUT
         env:
           TEST_EXCLUSIONS: 'TestUpgradeTestSuite,TestGrandpaTestSuite,TestIBCWasmUpgradeTestSuite'
+          TEST_BY_SUITE: 'True'
 
   # dynamically build a matrix of test/test suite pairs to run
   build-test-matrix-wasm:
@@ -72,7 +73,9 @@ jobs:
       - name: Run e2e Test
         run: |
           cd e2e
-          make e2e-test test=${{ matrix.test }}
+          make e2e-test-suite entrypoint=${{ matrix.entrypoint }}
+        env:
+          KEEP_CONTAINTERS: "true"
 
   # this workflow runs only the wasm tests.
   e2e-fork-wasm:

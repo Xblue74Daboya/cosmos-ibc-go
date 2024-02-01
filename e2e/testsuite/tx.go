@@ -63,14 +63,13 @@ func (s *E2ETestSuite) BroadcastMessages(ctx context.Context, chain ibc.Chain, u
 	}
 	if s.relayers.ContainsRelayer(s.T().Name(), user) {
 		// Retry five times, the value of 5 chosen is arbitrary.
-		resp, err = s.retryNtimes(broadcastFunc, 5)
+		resp, err = s.retryNtimes(broadcastFunc, 10)
 	} else {
 		resp, err = broadcastFunc()
 	}
 	s.Require().NoError(err)
 
-	chainA, chainB := s.GetChains()
-	s.Require().NoError(test.WaitForBlocks(ctx, 2, chainA, chainB))
+	s.Require().NoError(test.WaitForBlocks(ctx, 2, chain))
 
 	return resp
 }
@@ -111,7 +110,7 @@ func (s *E2ETestSuite) AssertTxFailure(resp sdk.TxResponse, expectedError *error
 // AssertTxSuccess verifies that an sdk.TxResponse has succeeded.
 func (s *E2ETestSuite) AssertTxSuccess(resp sdk.TxResponse) {
 	errorMsg := addDebuggingInformation(fmt.Sprintf("%+v", resp))
-	s.Require().Equal(resp.Code, uint32(0), errorMsg)
+	s.Require().Equal(uint32(0), resp.Code, errorMsg)
 	s.Require().NotEmpty(resp.TxHash, errorMsg)
 	s.Require().NotEqual(int64(0), resp.GasUsed, errorMsg)
 	s.Require().NotEqual(int64(0), resp.GasWanted, errorMsg)
@@ -152,10 +151,6 @@ func (s *E2ETestSuite) ExecuteGovV1Proposal(ctx context.Context, msg sdk.Msg, ch
 	s.Require().NoError(err)
 
 	proposalID := s.proposalIDs[cosmosChain.Config().ChainID]
-	defer func() {
-		s.proposalIDs[cosmosChain.Config().ChainID] = proposalID + 1
-	}()
-
 	msgs := []sdk.Msg{msg}
 
 	msgSubmitProposal, err := govtypesv1.NewMsgSubmitProposal(
@@ -174,7 +169,11 @@ func (s *E2ETestSuite) ExecuteGovV1Proposal(ctx context.Context, msg sdk.Msg, ch
 
 	s.Require().NoError(cosmosChain.VoteOnProposalAllValidators(ctx, strconv.Itoa(int(proposalID)), cosmos.ProposalVoteYes))
 
-	return s.waitForGovV1ProposalToPass(ctx, cosmosChain, proposalID)
+	err = s.waitForGovV1ProposalToPass(ctx, cosmosChain, proposalID)
+
+	s.proposalIDs[chain.Config().ChainID] = proposalID + 1
+
+	return err
 }
 
 // waitForGovV1ProposalToPass polls for the entire voting period to see if the proposal has passed.
@@ -208,13 +207,9 @@ func (s *E2ETestSuite) ExecuteAndPassGovV1Beta1Proposal(ctx context.Context, cha
 	}
 
 	proposalID := s.proposalIDs[chain.Config().ChainID]
-	defer func() {
-		s.proposalIDs[chain.Config().ChainID] = proposalID + 1
-	}()
 
 	txResp := s.ExecuteGovV1Beta1Proposal(ctx, cosmosChain, user, content)
 	s.AssertTxSuccess(txResp)
-
 	// TODO: replace with parsed proposal ID from MsgSubmitProposalResponse
 	// https://github.com/cosmos/ibc-go/issues/2122
 
@@ -232,6 +227,7 @@ func (s *E2ETestSuite) ExecuteAndPassGovV1Beta1Proposal(ctx context.Context, cha
 
 	err = s.waitForGovV1Beta1ProposalToPass(ctx, cosmosChain, proposalID)
 	s.Require().NoError(err)
+	s.proposalIDs[chain.Config().ChainID] = proposalID + 1
 }
 
 // waitForGovV1Beta1ProposalToPass polls for the entire voting period to see if the proposal has passed.

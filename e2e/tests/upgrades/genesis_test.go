@@ -36,9 +36,7 @@ type GenesisTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
-func (s *GenesisTestSuite) TestIBCGenesis() {
-	t := s.T()
-
+func (s *GenesisTestSuite) SetupSuite() {
 	configFileOverrides := make(map[string]any)
 	appTomlOverrides := make(test.Toml)
 
@@ -50,9 +48,16 @@ func (s *GenesisTestSuite) TestIBCGenesis() {
 
 	// create chains with specified chain configuration options
 	chainA, chainB := s.GetChains(chainOpts)
+	s.SetChainsIntoSuite(chainA, chainB)
+}
+
+func (s *GenesisTestSuite) TestIBCGenesis() {
+	t := s.T()
 
 	ctx := context.Background()
-	relayer, channelA := s.SetupChainsRelayerAndChannel(ctx, nil)
+
+	chainA, chainB := s.GetChains()
+	relayer, channelA := s.SetupRelayer(ctx, nil, chainA, chainB)
 	var (
 		chainADenom    = chainA.Config().Denom
 		chainBIBCToken = testsuite.GetIBCToken(chainADenom, channelA.Counterparty.PortID, channelA.Counterparty.ChannelID) // IBC token sent to chainB

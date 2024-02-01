@@ -29,6 +29,11 @@ type InterchainAccountsParamsTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
+func (s *InterchainAccountsParamsTestSuite) SetupSuite() {
+	chainA, chainB := s.GetChains()
+	s.SetChainsIntoSuite(chainA, chainB)
+}
+
 // QueryControllerParams queries the params for the controller
 func (s *InterchainAccountsParamsTestSuite) QueryControllerParams(ctx context.Context, chain ibc.Chain) controllertypes.Params {
 	queryClient := s.GetChainGRCPClients(chain).ICAControllerQueryClient
@@ -52,10 +57,9 @@ func (s *InterchainAccountsParamsTestSuite) TestControllerEnabledParam() {
 	t := s.T()
 	ctx := context.TODO()
 
-	// setup relayers and connection-0 between two chains
-	// channel-0 is a transfer channel but it will not be used in this test case
-	_, _ = s.SetupChainsRelayerAndChannel(ctx, nil)
-	chainA, _ := s.GetChains()
+	chainA, chainB := s.GetChains()
+	_, _ = s.SetupRelayer(ctx, nil, chainA, chainB)
+
 	chainAVersion := chainA.Config().Images[0].Version
 
 	// setup controller account on chainA
@@ -101,16 +105,42 @@ func (s *InterchainAccountsParamsTestSuite) TestControllerEnabledParam() {
 		txResp := s.BroadcastMessages(ctx, chainA, controllerAccount, msgRegisterAccount)
 		s.AssertTxFailure(txResp, controllertypes.ErrControllerSubModuleDisabled)
 	})
+
+	t.Run("enable the controller", func(t *testing.T) {
+		if testvalues.SelfParamsFeatureReleases.IsSupported(chainAVersion) {
+			authority, err := s.QueryModuleAccountAddress(ctx, govtypes.ModuleName, chainA)
+			s.Require().NoError(err)
+			s.Require().NotNil(authority)
+
+			msg := controllertypes.MsgUpdateParams{
+				Signer: authority.String(),
+				Params: controllertypes.NewParams(true),
+			}
+			s.ExecuteAndPassGovV1Proposal(ctx, &msg, chainA, controllerAccount)
+		} else {
+			changes := []paramsproposaltypes.ParamChange{
+				paramsproposaltypes.NewParamChange(controllertypes.StoreKey, string(controllertypes.KeyControllerEnabled), "true"),
+			}
+
+			proposal := paramsproposaltypes.NewParameterChangeProposal(ibctesting.Title, ibctesting.Description, changes)
+			s.ExecuteAndPassGovV1Beta1Proposal(ctx, chainA, controllerAccount, proposal)
+		}
+	})
+
+	t.Run("ensure controller is enable", func(t *testing.T) {
+		params := s.QueryControllerParams(ctx, chainA)
+		s.Require().True(params.ControllerEnabled)
+	})
 }
 
 func (s *InterchainAccountsParamsTestSuite) TestHostEnabledParam() {
 	t := s.T()
+	t.Parallel()
 	ctx := context.TODO()
 
-	// setup relayers and connection-0 between two chains
-	// channel-0 is a transfer channel but it will not be used in this test case
-	_, _ = s.SetupChainsRelayerAndChannel(ctx, nil)
-	_, chainB := s.GetChains()
+	chainA, chainB := s.GetChains()
+	_, _ = s.SetupRelayer(ctx, nil, chainA, chainB)
+
 	chainBVersion := chainB.Config().Images[0].Version
 
 	// setup 2 accounts: controller account on chain A, a second chain B account.

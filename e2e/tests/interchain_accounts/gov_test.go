@@ -27,22 +27,32 @@ import (
 	ibctesting "github.com/cosmos/ibc-go/v8/testing"
 )
 
-func TestInterchainAccountsGovTestSuite(t *testing.T) {
-	testifysuite.Run(t, new(InterchainAccountsGovTestSuite))
+func TestGovInterchainAccountsTestSuite(t *testing.T) {
+	testifysuite.Run(t, new(GovInterchainAccountsTestSuite))
 }
 
-type InterchainAccountsGovTestSuite struct {
+type GovInterchainAccountsTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
-func (s *InterchainAccountsGovTestSuite) TestInterchainAccountsGovIntegration() {
+func (s *GovInterchainAccountsTestSuite) SetupSuite() {
+	chainA, chainB := s.GetChains()
+	s.SetChainsIntoSuite(chainA, chainB)
+}
+
+func (s *GovInterchainAccountsTestSuite) TestInterchainAccountsGovIntegration() {
 	t := s.T()
+	t.Parallel()
 	ctx := context.TODO()
+
+	chainA, chainB := s.GetChains()
+	relayer, _ := s.SetupRelayer(ctx, nil, chainA, chainB)
 
 	// setup relayers and connection-0 between two chains
 	// channel-0 is a transfer channel but it will not be used in this test case
-	relayer, _ := s.SetupChainsRelayerAndChannel(ctx, nil)
-	chainA, chainB := s.GetChains()
+	_, err := relayer.GetChannels(ctx, s.GetRelayerExecReporter(), chainA.Config().ChainID)
+	s.Require().NoError(err)
+
 	controllerAccount := s.CreateUserOnChainA(ctx, testvalues.StartingTokenAmount)
 
 	chainBAccount := s.CreateUserOnChainB(ctx, testvalues.StartingTokenAmount)
@@ -106,6 +116,7 @@ func (s *InterchainAccountsGovTestSuite) TestInterchainAccountsGovIntegration() 
 
 			msgSendTx := controllertypes.NewMsgSendTx(govModuleAddress.String(), ibctesting.FirstConnectionID, uint64(time.Hour.Nanoseconds()), packetData)
 			s.ExecuteAndPassGovV1Proposal(ctx, msgSendTx, chainA, controllerAccount)
+			s.Require().NoError(test.WaitForBlocks(ctx, 5, chainA, chainB))
 		})
 
 		t.Run("verify tokens transferred", func(t *testing.T) {

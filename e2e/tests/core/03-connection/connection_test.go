@@ -32,6 +32,11 @@ type ConnectionTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
+func (s *ConnectionTestSuite) SetupSuite() {
+	chainA, chainB := s.GetChains()
+	s.SetChainsIntoSuite(chainA, chainB)
+}
+
 // QueryMaxExpectedTimePerBlockParam queries the on-chain max expected time per block param for 03-connection
 func (s *ConnectionTestSuite) QueryMaxExpectedTimePerBlockParam(ctx context.Context, chain ibc.Chain) uint64 {
 	if testvalues.SelfParamsFeatureReleases.IsSupported(chain.Config().Images[0].Version) {
@@ -60,10 +65,12 @@ func (s *ConnectionTestSuite) QueryMaxExpectedTimePerBlockParam(ctx context.Cont
 // TestMaxExpectedTimePerBlockParam tests changing the MaxExpectedTimePerBlock param using a governance proposal
 func (s *ConnectionTestSuite) TestMaxExpectedTimePerBlockParam() {
 	t := s.T()
+	t.Parallel()
 	ctx := context.TODO()
 
-	relayer, channelA := s.SetupChainsRelayerAndChannel(ctx, s.TransferChannelOptions())
 	chainA, chainB := s.GetChains()
+	relayer, channelA := s.SetupRelayer(ctx, s.TransferChannelOptions(), chainA, chainB)
+
 	chainAVersion := chainA.Config().Images[0].Version
 
 	chainBDenom := chainB.Config().Denom

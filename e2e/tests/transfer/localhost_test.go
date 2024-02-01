@@ -19,7 +19,7 @@ import (
 	ibctesting "github.com/cosmos/ibc-go/v8/testing"
 )
 
-func TestTransferLocalhostTestSuite(t *testing.T) {
+func TestLocalhostTransferTestSuite(t *testing.T) {
 	testifysuite.Run(t, new(LocalhostTransferTestSuite))
 }
 
@@ -27,17 +27,25 @@ type LocalhostTransferTestSuite struct {
 	testsuite.E2ETestSuite
 }
 
+func (s *LocalhostTransferTestSuite) SetupSuite() {
+	ctx := context.TODO()
+	chainA, chainB := s.GetChains()
+	s.SetChainsIntoSuite(chainA, chainB)
+	_, _ = s.SetupRelayer(ctx, nil, chainA, chainB)
+}
+
 // TestMsgTransfer_Localhost creates two wallets on a single chain and performs MsgTransfers back and forth
 // to ensure ibc functions as expected on localhost. This test is largely the same as TestMsgTransfer_Succeeds_Nonincentivized
 // except that chain B is replaced with an additional wallet on chainA.
 func (s *LocalhostTransferTestSuite) TestMsgTransfer_Localhost() {
 	t := s.T()
+	t.Parallel()
 	ctx := context.TODO()
 
-	_, _ = s.SetupChainsRelayerAndChannel(ctx, s.TransferChannelOptions())
-	chainA, _ := s.GetChains()
+	chainA, chainB := s.GetChains()
 
 	chainADenom := chainA.Config().Denom
+	_, _ = s.SetupRelayer(ctx, nil, chainA, chainB)
 
 	rlyWallet := s.CreateUserOnChainA(ctx, testvalues.StartingTokenAmount)
 	userAWallet := s.CreateUserOnChainA(ctx, testvalues.StartingTokenAmount)
