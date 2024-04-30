@@ -12,8 +12,12 @@ import (
 
 	modulev1 "github.com/cosmos/ibc-go/api/ibc/applications/interchain_accounts/module/v1"
 	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
-	controllerKeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/keeper"
-	hostKeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
+	"github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller"
+	controllerkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/keeper"
+	controllertypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/types"
+	"github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host"
+	hostkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
+	hosttypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/types"
 	"github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
 	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
 )
@@ -34,19 +38,23 @@ func init() {
 type ModuleInputs struct {
 	depinject.In
 
-	Config        *modulev1.Module
-	Cdc           codec.Codec
+	// TODO: Config should define `controller_enabled` and `host_enabled` vars for keeper/module setup
+	Config *modulev1.Module
+	Cdc    codec.Codec
+
+	// TODO: runtime seems to expect that a module contains a single kvstore key.
 	ControllerKey *storetypes.KVStoreKey
 	HostKey       *storetypes.KVStoreKey
 
-	Ics4Wrapper   porttypes.ICS4Wrapper
-	ChannelKeeper types.ChannelKeeper
-	PortKeeper    types.PortKeeper
-	ScopedKeeper  capabilitykeeper.ScopedKeeper
-	AccountKeeper types.AccountKeeper
+	Ics4Wrapper      porttypes.ICS4Wrapper
+	ChannelKeeper    types.ChannelKeeper
+	PortKeeper       types.PortKeeper
+	CapabilityKeeper *capabilitykeeper.Keeper
+	AccountKeeper    types.AccountKeeper
 
-	MsgRouter   types.MessageRouter
-	QueryRouter types.QueryRouter
+	MsgRouter types.MessageRouter
+	// TODO(remove optional): GRCPQueryRouter is not outputted into DI container on v0.50. It is on main.
+	QueryRouter types.QueryRouter `optional:"true"`
 
 	// LegacySubspace is used solely for migration of x/params managed parameters
 	LegacySubspace paramtypes.Subspace `optional:"true"`
@@ -56,9 +64,10 @@ type ModuleInputs struct {
 type ModuleOutputs struct {
 	depinject.Out
 
-	ControllerKeeper *controllerKeeper.Keeper
-	HostKeeper       *hostKeeper.Keeper
+	ControllerKeeper *controllerkeeper.Keeper
+	HostKeeper       *hostkeeper.Keeper
 	Module           appmodule.AppModule
+	IBCModuleRoutes  []porttypes.IBCModuleRoute
 }
 
 // ProvideModule returns the 27-interchain-accounts outputs for dependency injection
@@ -69,18 +78,21 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		authority = authtypes.NewModuleAddressOrBech32Address(in.Config.Authority)
 	}
 
-	controllerkeeper := controllerKeeper.NewKeeper(
+	scopedControllerKeeper := in.CapabilityKeeper.ScopeToModule(controllertypes.SubModuleName)
+	controllerKeeper := controllerkeeper.NewKeeper(
 		in.Cdc,
 		in.ControllerKey,
 		in.LegacySubspace,
 		in.Ics4Wrapper,
 		in.ChannelKeeper,
 		in.PortKeeper,
-		in.ScopedKeeper,
+		scopedControllerKeeper,
 		in.MsgRouter,
 		authority.String(),
 	)
-	hostkeeper := hostKeeper.NewKeeper(
+
+	scopedHostKeeper := in.CapabilityKeeper.ScopeToModule(hosttypes.SubModuleName)
+	hostKeeper := hostkeeper.NewKeeper(
 		in.Cdc,
 		in.HostKey,
 		in.LegacySubspace,
@@ -88,12 +100,27 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		in.ChannelKeeper,
 		in.PortKeeper,
 		in.AccountKeeper,
-		in.ScopedKeeper,
+		scopedHostKeeper,
 		in.MsgRouter,
 		in.QueryRouter,
 		authority.String(),
 	)
-	m := NewAppModule(&controllerkeeper, &hostkeeper)
+	m := NewAppModule(&controllerKeeper, &hostKeeper)
 
-	return ModuleOutputs{ControllerKeeper: &controllerkeeper, HostKeeper: &hostkeeper, Module: m}
+	controllerModule := controller.NewIBCMiddleware(nil, controllerKeeper)
+	hostModule := host.NewIBCModule(hostKeeper)
+
+	return ModuleOutputs{
+		ControllerKeeper: &controllerKeeper,
+		HostKeeper:       &hostKeeper,
+		Module:           m,
+		IBCModuleRoutes: []porttypes.IBCModuleRoute{
+			{
+				Name: controllertypes.SubModuleName, IBCModule: controllerModule,
+			},
+			{
+				Name: hosttypes.SubModuleName, IBCModule: hostModule,
+			},
+		},
+	}
 }
